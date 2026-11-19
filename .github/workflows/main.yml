@@ -1,0 +1,113 @@
+name: iOS Unsigned IPA Build
+
+on: workflow_dispatch
+
+
+
+jobs:
+
+  build:
+
+    runs-on: macos-latest
+
+    steps:
+
+      # 1. Git LFS 포함 체크아웃
+
+      - uses: actions/checkout@v4
+
+        with:
+
+          lfs: true
+
+
+
+      - name: Checkout LFS objects
+
+        run: git lfs pull
+
+
+
+      # 2. 실행 권한 부여 (Permission denied 해결)
+
+      - name: Grant Execute Permissions to Scripts
+
+        run: |
+
+          chmod +x *.sh || true
+
+          chmod -R +x ./*.sh || true
+
+
+
+      # 3. 메인 타깃 및 Framework 무서명 빌드
+
+      - name: Build Unsigned App
+
+        run: |
+
+          xcodebuild -project Unity-iPhone.xcodeproj \
+
+            -scheme Unity-iPhone \
+
+            -sdk iphoneos \
+
+            -configuration Release \
+
+            -derivedDataPath ./build_output \
+
+            CODE_SIGNING_ALLOWED=NO \
+
+            CODE_SIGNING_REQUIRED=NO \
+
+            CODE_SIGN_IDENTITY="" \
+
+            CODE_SIGN_ENTITLEMENTS="" \
+
+            CODE_SIGNING_INJECT_BASE_ENTITLEMENTS=NO \
+
+            DEBUG_INFORMATION_FORMAT=dwarf \
+
+            GCC_GENERATE_DEBUGGING_SYMBOLS=NO \
+
+            clean build
+
+
+
+      # 4. .app을 Payload 폴더에 넣고 ipa 압축
+
+      - name: Package to IPA
+
+        run: |
+
+          mkdir -p Payload
+
+          APP_PATH=$(find ./build_output/Build/Products/Release-iphoneos -name "*.app" -maxdepth 1)
+
+          if [ -z "$APP_PATH" ]; then
+
+            echo "Error: .app bundle not found!"
+
+            exit 1
+
+          fi
+
+          cp -r "$APP_PATH" Payload/
+
+          zip -r app-unsigned.ipa Payload
+
+
+
+      # 5. 결과물 업로드
+
+      - name: Upload Artifact
+
+        uses: actions/upload-artifact@v4
+
+        with:
+
+          name: ios-unsigned-ipa
+
+          path: app-unsigned.ipa
+
+          retention-days: 7
