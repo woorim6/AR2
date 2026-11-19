@@ -1,14 +1,40 @@
-# 3. 메인 타깃 및 Framework 무서명 빌드
-      - name: Build Unsigned App
+name: iOS Unsigned IPA Build
+
+on: workflow_dispatch
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      # 1. Git LFS 포함 체크아웃
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Checkout LFS objects
+        run: git lfs pull
+
+      # 2. Unity-iPhone.xcodeproj 위치 찾기 및 실행 권한 부여
+      - name: Locate Project and Grant Permissions
         run: |
           XCODE_PROJ=$(find . -maxdepth 4 -name "Unity-iPhone.xcodeproj" -print -quit)
           if [ -z "$XCODE_PROJ" ]; then
             echo "Error: Unity-iPhone.xcodeproj not found!"
             exit 1
           fi
-          echo "Using project: $XCODE_PROJ"
+          PROJ_DIR=$(dirname "$XCODE_PROJ")
+          echo "Found project: $XCODE_PROJ"
+          echo "Project dir: $PROJ_DIR"
+          echo "PROJ_DIR=$PROJ_DIR" >> "$GITHUB_ENV"
 
-          xcodebuild -project "$XCODE_PROJ" \
+          chmod +x "$PROJ_DIR"/*.sh 2>/dev/null || true
+          chmod -R +x "$PROJ_DIR"/*.sh 2>/dev/null || true
+
+      # 3. 메인 타깃 및 Framework 무서명 빌드
+      - name: Build Unsigned App
+        working-directory: ${{ env.PROJ_DIR }}
+        run: |
+          xcodebuild -project Unity-iPhone.xcodeproj \
             -scheme Unity-iPhone \
             -sdk iphoneos \
             -configuration Release \
@@ -21,3 +47,24 @@
             DEBUG_INFORMATION_FORMAT=dwarf \
             GCC_GENERATE_DEBUGGING_SYMBOLS=NO \
             clean build
+
+      # 4. .app을 Payload 폴더에 넣고 ipa 압축
+      - name: Package to IPA
+        working-directory: ${{ env.PROJ_DIR }}
+        run: |
+          mkdir -p Payload
+          APP_PATH=$(find ./build_output/Build/Products/Release-iphoneos -name "*.app" -maxdepth 1 -print -quit)
+          if [ -z "$APP_PATH" ]; then
+            echo "Error: .app bundle not found!"
+            exit 1
+          fi
+          cp -r "$APP_PATH" Payload/
+          zip -r app-unsigned.ipa Payload
+
+      # 5. 결과물 업로드
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-unsigned-ipa
+          path: ${{ env.PROJ_DIR }}/app-unsigned.ipa
+          retention-days: 7
