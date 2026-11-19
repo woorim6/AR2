@@ -17,11 +17,20 @@ jobs:
       # 2. Unity-iPhone.xcodeproj 위치 찾기 및 실행 권한 부여
       - name: Locate Project and Grant Permissions
         run: |
-          XCODE_PROJ=$(find . -maxdepth 4 -name "Unity-iPhone.xcodeproj" -print -quit)
+          if [ -d "./AR2/Unity-iPhone.xcodeproj" ]; then
+            XCODE_PROJ="./AR2/Unity-iPhone.xcodeproj"
+          elif [ -d "./Unity-iPhone.xcodeproj" ]; then
+            XCODE_PROJ="./Unity-iPhone.xcodeproj"
+          else
+            XCODE_PROJ=$(find . -maxdepth 5 -name "Unity-iPhone.xcodeproj" -print -quit)
+          fi
+
           if [ -z "$XCODE_PROJ" ]; then
             echo "Error: Unity-iPhone.xcodeproj not found!"
+            ls -la
             exit 1
           fi
+
           PROJ_DIR=$(dirname "$XCODE_PROJ")
           echo "Found project: $XCODE_PROJ"
           echo "Project dir: $PROJ_DIR"
