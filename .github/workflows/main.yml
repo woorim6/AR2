@@ -6,7 +6,6 @@ jobs:
   build:
     runs-on: macos-latest
     steps:
-      # 1. Git LFS 포함 체크아웃
       - uses: actions/checkout@v4
         with:
           lfs: true
@@ -14,40 +13,24 @@ jobs:
       - name: Checkout LFS objects
         run: git lfs pull
 
-      # 2. Unity-iPhone.xcodeproj 위치 찾기 및 실행 권한 부여
-      - name: Locate Project and Grant Permissions
+      - name: Find Project and Build Unsigned App
         run: |
-          if [ -d "./AR2/Unity-iPhone.xcodeproj" ]; then
-            XCODE_PROJ="./AR2/Unity-iPhone.xcodeproj"
-          elif [ -d "./Unity-iPhone.xcodeproj" ]; then
-            XCODE_PROJ="./Unity-iPhone.xcodeproj"
-          else
-            XCODE_PROJ=$(find . -maxdepth 5 -name "Unity-iPhone.xcodeproj" -print -quit)
-          fi
-
+          XCODE_PROJ=$(find . -maxdepth 4 -name "Unity-iPhone.xcodeproj" -print -quit)
           if [ -z "$XCODE_PROJ" ]; then
             echo "Error: Unity-iPhone.xcodeproj not found!"
-            ls -la
             exit 1
           fi
 
           PROJ_DIR=$(dirname "$XCODE_PROJ")
-          echo "Found project: $XCODE_PROJ"
-          echo "Project dir: $PROJ_DIR"
-          echo "PROJ_DIR=$PROJ_DIR" >> "$GITHUB_ENV"
+          echo "Found project: $XCODE_PROJ in $PROJ_DIR"
 
           chmod +x "$PROJ_DIR"/*.sh 2>/dev/null || true
-          chmod -R +x "$PROJ_DIR"/*.sh 2>/dev/null || true
 
-      # 3. 메인 타깃 및 Framework 무서명 빌드
-      - name: Build Unsigned App
-        working-directory: ${{ env.PROJ_DIR }}
-        run: |
-          xcodebuild -project Unity-iPhone.xcodeproj \
+          xcodebuild -project "$PROJ_DIR/Unity-iPhone.xcodeproj" \
             -scheme Unity-iPhone \
             -sdk iphoneos \
             -configuration Release \
-            -derivedDataPath ./build_output \
+            -derivedDataPath "$PROJ_DIR/build_output" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -57,23 +40,23 @@ jobs:
             GCC_GENERATE_DEBUGGING_SYMBOLS=NO \
             clean build
 
-      # 4. .app을 Payload 폴더에 넣고 ipa 압축
       - name: Package to IPA
-        working-directory: ${{ env.PROJ_DIR }}
         run: |
-          mkdir -p Payload
-          APP_PATH=$(find ./build_output/Build/Products/Release-iphoneos -name "*.app" -maxdepth 1 -print -quit)
+          XCODE_PROJ=$(find . -maxdepth 4 -name "Unity-iPhone.xcodeproj" -print -quit)
+          PROJ_DIR=$(dirname "$XCODE_PROJ")
+          mkdir -p "$PROJ_DIR/Payload"
+          APP_PATH=$(find "$PROJ_DIR/build_output/Build/Products/Release-iphoneos" -name "*.app" -maxdepth 1 -print -quit)
           if [ -z "$APP_PATH" ]; then
             echo "Error: .app bundle not found!"
             exit 1
           fi
-          cp -r "$APP_PATH" Payload/
-          zip -r app-unsigned.ipa Payload
+          cp -r "$APP_PATH" "$PROJ_DIR/Payload/"
+          (cd "$PROJ_DIR" && zip -r app-unsigned.ipa Payload)
+          echo "IPA_PATH=$PROJ_DIR/app-unsigned.ipa" >> "$GITHUB_ENV"
 
-      # 5. 결과물 업로드
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ios-unsigned-ipa
-          path: ${{ env.PROJ_DIR }}/app-unsigned.ipa
+          path: ${{ env.IPA_PATH }}
           retention-days: 7
